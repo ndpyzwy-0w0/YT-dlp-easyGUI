@@ -3,11 +3,42 @@
 from __future__ import annotations
 
 import os
+import re
 import shutil
 import threading
 import tkinter as tk
 from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
+
+from ensure_tools import ensure_tools, find_deno, find_ffmpeg
+
+_HTTP_URL_RE = re.compile(r"https?://[^\s<>\"'`]+", re.I)
+_YTDLP_DOC_RE = re.compile(r"github\.com/yt-dlp", re.I)
+_BARE_SITE_RE = re.compile(
+    r"^(?:www\.)?(?:youtube\.com|youtu\.be|youtube-nocookie\.com)/\S+",
+    re.I,
+)
+
+
+def parse_url(text: str) -> str | None:
+    """Return a usable http(s) URL, or None if the field is not a video link."""
+    raw = (text or "").strip()
+    if len(raw) >= 2 and raw[0] == raw[-1] and raw[0] in "\"'":
+        raw = raw[1:-1].strip()
+    if not raw:
+        return None
+
+    found = []
+    for m in _HTTP_URL_RE.finditer(raw):
+        url = m.group(0).rstrip(".,);]>\"'")
+        if url and not _YTDLP_DOC_RE.search(url):
+            found.append(url)
+    if found:
+        return found[0]
+    if _BARE_SITE_RE.match(raw):
+        return "https://" + raw
+    return None
+
 
 try:
     import yt_dlp
@@ -15,9 +46,9 @@ except ImportError:
     yt_dlp = None
 
 FORMAT_PRESETS = {
-    "最佳画质": {"format": "bv*+ba/b"},
-    "1080p": {"format": "bv*[height<=1080]+ba/b[height<=1080]/b"},
-    "720p": {"format": "bv*[height<=720]+ba/b[height<=720]/b"},
+    "最佳画质": {"format": "bv*+ba/b/bv*"},
+    "1080p": {"format": "bv*[height<=1080]+ba/b[height<=1080]/bv*[height<=1080]/b"},
+    "720p": {"format": "bv*[height<=720]+ba/b[height<=720]/bv*[height<=720]/b"},
     "仅音频 (MP3)": {
         "format": "bestaudio/best",
         "postprocessors": [
@@ -31,12 +62,22 @@ FORMAT_PRESETS = {
 }
 
 
-# 没有 ffmpeg 时无法合并音视频轨，退回单文件格式。
+# 没有 ffmpeg 时无法合并音视频轨；加 bv* 避免「一体流不存在」直接失败。
 NO_FFMPEG_FORMATS = {
-    "最佳画质": "b",
-    "1080p": "b[height<=1080]/b",
-    "720p": "b[height<=720]/b",
+    "最佳画质": "b/bv*/best",
+    "1080p": "b[height<=1080]/bv*[height<=1080]/b/bv*",
+    "720p": "b[height<=720]/bv*[height<=720]/b/bv*",
 }
+
+
+def ydl_tool_opts(ffmpeg_path: str | Path | None = None, deno_path: str | Path | None = None) -> dict:
+    opts = {}
+    if ffmpeg_path:
+        opts["ffmpeg_location"] = str(ffmpeg_path)
+    deno = deno_path or find_deno()
+    if deno:
+        opts["js_runtimes"] = {"deno": {"path": str(deno)}}
+    return opts
 
 
 def build_ydl_opts(
@@ -46,6 +87,8 @@ def build_ydl_opts(
     log_hook,
     progress_hook,
     has_ffmpeg: bool | None = None,
+    ffmpeg_path: str | Path | None = None,
+    deno_path: str | Path | None = None,
 ) -> dict:
     opts = {
         "outtmpl": str(Path(out_dir) / "%(title)s.%(ext)s"),
@@ -55,8 +98,12 @@ def build_ydl_opts(
         "logger": _YdlLogger(log_hook),
         "retries": 3,
         "fragment_retries": 3,
+        "concurrent_fragment_downloads": 4,
+        **ydl_tool_opts(ffmpeg_path, deno_path),
     }
-    if has_ffmpeg is None:
+    if ffmpeg_path:
+        has_ffmpeg = True
+    elif has_ffmpeg is None:
         has_ffmpeg = shutil.which("ffmpeg") is not None
     if not has_ffmpeg and preset in NO_FFMPEG_FORMATS:
         opts["format"] = NO_FFMPEG_FORMATS[preset]
@@ -105,7 +152,8 @@ class App(tk.Tk):
     def _startup_status(self) -> str:
         parts = []
         parts.append("yt-dlp 已安装" if yt_dlp else "未安装 yt-dlp（请先 pip install -r requirements.txt）")
-        parts.append("ffmpeg 已找到" if shutil.which("ffmpeg") else "未找到 ffmpeg（合流转码需要）")
+        parts.append("ffmpeg 已找到" if find_ffmpeg() else "缺少 ffmpeg（首次下载会自动安装）")
+        parts.append("deno 已找到" if find_deno() else "缺少 deno（首次下载会自动安装，YouTube 需要）")
         return "  |  ".join(parts)
 
     def _build(self):
@@ -158,9 +206,15 @@ class App(tk.Tk):
 
     def _paste(self):
         try:
-            self.url_var.set(self.clipboard_get().strip())
+            raw = self.clipboard_get().strip()
         except tk.TclError:
             messagebox.showinfo("提示", "剪贴板是空的")
+            return
+        url = parse_url(raw)
+        if not url:
+            messagebox.showwarning("提示", "链接无效，请粘贴视频网址")
+            return
+        self.url_var.set(url)
 
     def _browse(self):
         path = filedialog.askdirectory(initialdir=self.dir_var.get() or ".")
@@ -175,13 +229,19 @@ class App(tk.Tk):
         os.startfile(path)
 
     def _url(self) -> str | None:
-        url = self.url_var.get().strip()
-        if not url:
+        raw = self.url_var.get().strip()
+        if not raw:
             messagebox.showwarning("提示", "请先粘贴视频链接")
+            return None
+        url = parse_url(raw)
+        if not url:
+            messagebox.showwarning("提示", "链接无效，请粘贴视频网址")
             return None
         if yt_dlp is None:
             messagebox.showerror("错误", "未安装 yt-dlp，请运行: pip install -r requirements.txt")
             return None
+        if url != raw:
+            self.url_var.set(url)
         return url
 
     def _set_busy(self, busy: bool):
@@ -233,7 +293,12 @@ class App(tk.Tk):
 
     def _info_worker(self, url: str):
         try:
-            opts = {"quiet": True, "noplaylist": not self.playlist_var.get()}
+            ffmpeg, deno = ensure_tools(self._log)
+            opts = {
+                "quiet": True,
+                "noplaylist": not self.playlist_var.get(),
+                **ydl_tool_opts(ffmpeg, deno),
+            }
             with yt_dlp.YoutubeDL(opts) as ydl:
                 info = ydl.extract_info(url, download=False)
             if info is None:
@@ -270,9 +335,6 @@ class App(tk.Tk):
             return
         Path(out_dir).mkdir(parents=True, exist_ok=True)
         preset = self.preset_var.get()
-        if preset == "仅音频 (MP3)" and not shutil.which("ffmpeg"):
-            messagebox.showerror("错误", "转 MP3 需要 ffmpeg，请先安装并加入 PATH")
-            return
         self._set_busy(True)
         self.progress_var.set(0)
         self._status("开始下载…")
@@ -284,11 +346,23 @@ class App(tk.Tk):
 
     def _download_worker(self, url: str, out_dir: str, preset: str, playlist: bool):
         try:
-            has_ffmpeg = shutil.which("ffmpeg") is not None
-            if not has_ffmpeg and preset in NO_FFMPEG_FORMATS:
-                self._log("未找到 ffmpeg，已改用单文件画质（无法合并音视频轨）")
+            self._status("正在准备 ffmpeg / deno…")
+            ffmpeg, deno = ensure_tools(self._log)
+            if preset == "仅音频 (MP3)" and not ffmpeg:
+                self._log("转 MP3 需要 ffmpeg，自动安装失败")
+                self._status("下载失败")
+                return
+            if not ffmpeg:
+                self._log("未找到 ffmpeg，将尽量下载单文件；音视频分轨时可能没有声音")
             opts = build_ydl_opts(
-                out_dir, preset, playlist, self._log, self._progress_hook, has_ffmpeg
+                out_dir,
+                preset,
+                playlist,
+                self._log,
+                self._progress_hook,
+                has_ffmpeg=bool(ffmpeg),
+                ffmpeg_path=ffmpeg,
+                deno_path=deno,
             )
             with yt_dlp.YoutubeDL(opts) as ydl:
                 ydl.download([url])
