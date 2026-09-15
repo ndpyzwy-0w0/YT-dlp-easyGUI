@@ -131,11 +131,17 @@ ffmpeg 没装上。看日志里的下载错误，或手动运行 `python ensure_
 
 成功会打印 `ok`。
 
-### 依赖与声明
+### 许可证
 
-- 下载引擎：[yt-dlp](https://github.com/yt-dlp/yt-dlp)
-- 合流转码：[FFmpeg Builds](https://github.com/yt-dlp/FFmpeg-Builds)（首次自动获取）
-- YouTube JS 运行时：[Deno](https://github.com/denoland/deno)（首次自动获取）
+本仓库源码与 [yt-dlp](https://github.com/yt-dlp/yt-dlp) 相同，使用 [Unlicense](LICENSE)（公共领域）。
+
+首次运行时下载到 `tools/` 的程序仍按各自许可证分发，不改变本仓库协议：
+
+| 项目 | 许可证 | 用途 |
+| --- | --- | --- |
+| [yt-dlp](https://github.com/yt-dlp/yt-dlp) | Unlicense | 下载引擎 |
+| [Deno](https://github.com/denoland/deno) | MIT | YouTube JS 运行时 |
+| [FFmpeg](https://ffmpeg.org/legal.html)（本工具拉取的是 [GPL 构建](https://github.com/yt-dlp/FFmpeg-Builds)） | GPL | 合轨、转 MP3 |
 
 请只下载你有权获取的内容，并遵守目标网站条款。本工具是对 yt-dlp 的薄封装，不提供破解或绕过付费墙的功能。
 
@@ -262,10 +268,16 @@ Quit the running window and launch again; an old process keeps old code.
 
 Prints `ok` on success.
 
-### Credits and legal
+### License
 
-- Engine: [yt-dlp](https://github.com/yt-dlp/yt-dlp)
-- Muxing / transcode: [FFmpeg Builds](https://github.com/yt-dlp/FFmpeg-Builds) (fetched on first use)
-- YouTube JS runtime: [Deno](https://github.com/denoland/deno) (fetched on first use)
+This repository is [Unlicense](LICENSE), same as [yt-dlp](https://github.com/yt-dlp/yt-dlp).
+
+Binaries fetched into `tools/` keep their own licenses and are not part of this grant:
+
+| Project | License | Role |
+| --- | --- | --- |
+| [yt-dlp](https://github.com/yt-dlp/yt-dlp) | Unlicense | Download engine |
+| [Deno](https://github.com/denoland/deno) | MIT | YouTube JS runtime |
+| [FFmpeg](https://ffmpeg.org/legal.html) ([GPL build](https://github.com/yt-dlp/FFmpeg-Builds) used here) | GPL | Muxing / MP3 |
 
 Only download content you have the right to obtain, and follow the site’s terms. This app is a thin GUI over yt-dlp; it does not bypass paywalls or DRM.
