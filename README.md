@@ -71,6 +71,7 @@ python -m venv .venv
 | 下载视频封面 | 同时保存 yt-dlp 找到的封面图片 |
 | 查看信息 | 不下载，只解析标题/时长/列表 |
 | 开始下载 | 后台下载，界面不卡死 |
+| 一键安装工具 | 手动把 ffmpeg、deno 装到 `tools/`；首次查看信息或下载时也会自动装 |
 | 打开目录 | 用资源管理器打开保存目录 |
 
 画质对应的 yt-dlp 选择器（有 ffmpeg 时优先音视频分轨再合并）：
@@ -210,6 +211,7 @@ Prefetch tools only:
 | Download video thumbnail | Save the thumbnail image found by yt-dlp |
 | 查看信息 | Metadata only |
 | 开始下载 | Download on a background thread |
+| 一键安装工具 | Fetch ffmpeg and deno into `tools/` on demand (also happens automatically on first info/download) |
 | 打开目录 | Open the save folder in Explorer |
 
 Format presets (with ffmpeg, video+audio are merged):

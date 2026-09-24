@@ -217,8 +217,10 @@ class App(tk.Tk):
         self.dl_btn = ttk.Button(
             btns, text="开始下载", command=self._download, style="Primary.TButton"
         )
+        self.tools_btn = ttk.Button(btns, text="一键安装工具", command=self._install_tools)
         self.info_btn.pack(side=tk.LEFT, padx=(0, 8))
         self.dl_btn.pack(side=tk.LEFT, padx=(0, 8))
+        self.tools_btn.pack(side=tk.LEFT, padx=(0, 8))
         self.status_label = ttk.Label(btns, textvariable=self.status_var, style="Status.TLabel")
         self.status_label.pack(side=tk.RIGHT, padx=(8, 0))
 
@@ -282,6 +284,37 @@ class App(tk.Tk):
             self.log_frame.grid_remove()
             self.log_toggle.configure(text="显示详细日志")
 
+    def _install_tools(self):
+        if self._busy:
+            return
+        self._set_busy(True)
+        self._set_progress_indeterminate()
+        self._status("正在安装 ffmpeg / deno…")
+        threading.Thread(target=self._install_worker, daemon=True).start()
+
+    def _install_worker(self):
+        try:
+            ffmpeg, deno = ensure_tools(self._log)
+            missing = [n for n, p in (("ffmpeg", ffmpeg), ("deno", deno)) if not p]
+            if missing:
+                self._log(f"安装失败: {'、'.join(missing)}，请检查网络后重试")
+                self._status("工具安装失败")
+            else:
+                self._log("ffmpeg 与 deno 均已就绪")
+                self._status("工具已就绪")
+        except Exception as e:
+            self._log(f"安装工具失败: {e}")
+            self._status("工具安装失败")
+        finally:
+            self.after(0, self._finish_install)
+
+    def _finish_install(self):
+        self._set_busy(False)
+        self.progress.stop()
+        self.progress.configure(mode="determinate")
+        self.progress_var.set(0)
+        self._status(self._startup_status())
+
     def _url(self) -> str | None:
         raw = self.url_var.get().strip()
         if not raw:
@@ -312,6 +345,7 @@ class App(tk.Tk):
             self.thumbnail_check,
             self.info_btn,
             self.dl_btn,
+            self.tools_btn,
         ):
             widget.configure(state=state)
         if not busy:
