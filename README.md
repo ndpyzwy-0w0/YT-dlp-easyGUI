@@ -19,6 +19,7 @@ A small [yt-dlp](https://github.com/yt-dlp/yt-dlp) GUI: paste a URL, pick a fold
 - 查看标题、时长、上传者；播放列表会列出条目
 - 画质：最佳 / 1080p / 720p / 仅音频 MP3
 - 可选下载整个播放列表
+- 可选同时下载视频封面
 - 进度条 + 日志；默认保存到「下载」文件夹
 - 首次查看信息或下载时，若本机没有 **ffmpeg** / **deno**，会自动装到项目的 `tools/`（Windows）
 
@@ -67,6 +68,7 @@ python -m venv .venv
 | 保存目录 / 浏览 | 输出文件夹，文件名是 `标题.扩展名` |
 | 下载格式 | 见下表 |
 | 下载整个播放列表 | 默认只下单条；勾选则下整个列表 |
+| 下载视频封面 | 同时保存 yt-dlp 找到的封面图片 |
 | 查看信息 | 不下载，只解析标题/时长/列表 |
 | 开始下载 | 后台下载，界面不卡死 |
 | 打开目录 | 用资源管理器打开保存目录 |
@@ -156,6 +158,7 @@ ffmpeg 没装上。看日志里的下载错误，或手动运行 `python ensure_
 - Inspect title, duration, and uploader; playlists list their entries
 - Quality presets: best / 1080p / 720p / audio-only MP3
 - Optional full-playlist download
+- Optional thumbnail download
 - Progress bar + log; default output is the user Downloads folder
 - On first **View info** or **Download**, missing **ffmpeg** / **deno** are fetched into `tools/` (Windows)
 
@@ -204,6 +207,7 @@ Prefetch tools only:
 | Save folder / 浏览 | Output directory; files are named `title.ext` |
 | Format | See table below |
 | Download whole playlist | Off = single item; on = entire playlist |
+| Download video thumbnail | Save the thumbnail image found by yt-dlp |
 | 查看信息 | Metadata only |
 | 开始下载 | Download on a background thread |
 | 打开目录 | Open the save folder in Explorer |

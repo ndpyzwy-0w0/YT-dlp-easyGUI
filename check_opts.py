@@ -11,7 +11,13 @@ assert "%(title)s.%(ext)s" in opts["outtmpl"]
 opts2 = build_ydl_opts(".", "最佳画质", True, print, lambda d: None, has_ffmpeg=True)
 assert opts2["noplaylist"] is False
 assert "postprocessors" not in opts2
+assert "writethumbnail" not in opts2
 assert opts2["format"] == FORMAT_PRESETS["最佳画质"]["format"]
+
+opts_thumbnail = build_ydl_opts(
+    ".", "最佳画质", False, print, lambda d: None, has_ffmpeg=True, download_thumbnail=True
+)
+assert opts_thumbnail["writethumbnail"] is True
 
 opts3 = build_ydl_opts(".", "1080p", False, print, lambda d: None, has_ffmpeg=False)
 assert opts3["format"] == "b[height<=1080]/bv*[height<=1080]/b/bv*"

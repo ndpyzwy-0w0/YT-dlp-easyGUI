@@ -89,6 +89,7 @@ def build_ydl_opts(
     has_ffmpeg: bool | None = None,
     ffmpeg_path: str | Path | None = None,
     deno_path: str | Path | None = None,
+    download_thumbnail: bool = False,
 ) -> dict:
     opts = {
         "outtmpl": str(Path(out_dir) / "%(title)s.%(ext)s"),
@@ -109,6 +110,8 @@ def build_ydl_opts(
         opts["format"] = NO_FFMPEG_FORMATS[preset]
     else:
         opts.update(FORMAT_PRESETS[preset])
+    if download_thumbnail:
+        opts["writethumbnail"] = True
     return opts
 
 
@@ -135,8 +138,8 @@ class App(tk.Tk):
     def __init__(self):
         super().__init__()
         self.title("简易 yt-dlp 下载工具")
-        self.geometry("720x520")
-        self.minsize(560, 420)
+        self.geometry("760x600")
+        self.minsize(600, 480)
 
         self._busy = False
         default_dir = str(Path.home() / "Downloads")
@@ -144,65 +147,107 @@ class App(tk.Tk):
         self.dir_var = tk.StringVar(value=default_dir)
         self.preset_var = tk.StringVar(value="最佳画质")
         self.playlist_var = tk.BooleanVar(value=False)
+        self.thumbnail_var = tk.BooleanVar(value=False)
         self.status_var = tk.StringVar(value=self._startup_status())
         self.progress_var = tk.DoubleVar(value=0)
+        self.info_title_var = tk.StringVar(value="尚未获取视频信息")
+        self.info_meta_var = tk.StringVar(value="粘贴链接后可查看标题、时长和上传者")
+        self.log_visible = False
 
         self._build()
 
     def _startup_status(self) -> str:
-        parts = []
-        parts.append("yt-dlp 已安装" if yt_dlp else "未安装 yt-dlp（请先 pip install -r requirements.txt）")
-        parts.append("ffmpeg 已找到" if find_ffmpeg() else "缺少 ffmpeg（首次下载会自动安装）")
-        parts.append("deno 已找到" if find_deno() else "缺少 deno（首次下载会自动安装，YouTube 需要）")
-        return "  |  ".join(parts)
+        parts = ["yt-dlp ✓" if yt_dlp else "yt-dlp 未安装"]
+        parts.append("ffmpeg ✓" if find_ffmpeg() else "ffmpeg 待安装")
+        parts.append("deno ✓" if find_deno() else "deno 待安装")
+        return "环境：" + "  ·  ".join(parts)
 
     def _build(self):
-        pad = {"padx": 10, "pady": 6}
-        frm = ttk.Frame(self, padding=12)
+        style = ttk.Style(self)
+        style.configure("Title.TLabel", font=("Segoe UI", 14, "bold"))
+        style.configure("Primary.TButton", font=("Segoe UI", 10, "bold"))
+        style.configure("Status.TLabel", foreground="#5f6368")
+        style.configure("Success.TLabel", foreground="#188038")
+        style.configure("Error.TLabel", foreground="#c5221f")
+
+        pad = {"padx": 8, "pady": 5}
+        frm = ttk.Frame(self, padding=16)
         frm.pack(fill=tk.BOTH, expand=True)
         frm.columnconfigure(1, weight=1)
+        frm.rowconfigure(8, weight=1)
 
-        ttk.Label(frm, text="视频链接").grid(row=0, column=0, sticky="e")
-        ttk.Entry(frm, textvariable=self.url_var).grid(row=0, column=1, sticky="ew", **pad)
-        ttk.Button(frm, text="粘贴", command=self._paste, width=8).grid(row=0, column=2, **pad)
+        ttk.Label(frm, text="简易 yt-dlp 下载工具", style="Title.TLabel").grid(
+            row=0, column=0, columnspan=5, sticky="w", pady=(0, 12)
+        )
 
-        ttk.Label(frm, text="保存目录").grid(row=1, column=0, sticky="e")
-        ttk.Entry(frm, textvariable=self.dir_var).grid(row=1, column=1, sticky="ew", **pad)
-        ttk.Button(frm, text="浏览…", command=self._browse, width=8).grid(row=1, column=2, **pad)
+        ttk.Label(frm, text="视频链接").grid(row=1, column=0, sticky="w")
+        self.url_entry = ttk.Entry(frm, textvariable=self.url_var)
+        self.url_entry.grid(row=1, column=1, columnspan=2, sticky="ew", **pad)
+        self.paste_btn = ttk.Button(frm, text="粘贴", command=self._paste, width=8)
+        self.paste_btn.grid(row=1, column=3, **pad)
 
-        ttk.Label(frm, text="下载格式").grid(row=2, column=0, sticky="e")
-        ttk.Combobox(
+        ttk.Label(frm, text="保存到").grid(row=2, column=0, sticky="w")
+        self.dir_entry = ttk.Entry(frm, textvariable=self.dir_var)
+        self.dir_entry.grid(row=2, column=1, columnspan=2, sticky="ew", **pad)
+        self.browse_btn = ttk.Button(frm, text="浏览…", command=self._browse, width=8)
+        self.browse_btn.grid(row=2, column=3, **pad)
+        self.open_btn = ttk.Button(frm, text="打开目录", command=self._open_dir, width=8)
+        self.open_btn.grid(row=2, column=4, padx=(0, 8), pady=5)
+
+        ttk.Label(frm, text="下载设置").grid(row=3, column=0, sticky="w")
+        self.preset_combo = ttk.Combobox(
             frm,
             textvariable=self.preset_var,
             values=list(FORMAT_PRESETS),
             state="readonly",
-        ).grid(row=2, column=1, sticky="w", **pad)
-        ttk.Checkbutton(frm, text="下载整个播放列表", variable=self.playlist_var).grid(
-            row=2, column=2, sticky="w"
         )
+        self.preset_combo.grid(row=3, column=1, sticky="w", **pad)
+        self.playlist_check = ttk.Checkbutton(
+            frm, text="下载整个播放列表", variable=self.playlist_var
+        )
+        self.playlist_check.grid(row=3, column=2, columnspan=2, sticky="w")
+        self.thumbnail_check = ttk.Checkbutton(
+            frm, text="下载视频封面", variable=self.thumbnail_var
+        )
+        self.thumbnail_check.grid(row=3, column=4, sticky="w", padx=8, pady=5)
 
         btns = ttk.Frame(frm)
-        btns.grid(row=3, column=0, columnspan=3, sticky="w", pady=(4, 8))
+        btns.grid(row=4, column=0, columnspan=5, sticky="ew", pady=(8, 12))
         self.info_btn = ttk.Button(btns, text="查看信息", command=self._info)
-        self.dl_btn = ttk.Button(btns, text="开始下载", command=self._download)
-        self.open_btn = ttk.Button(btns, text="打开目录", command=self._open_dir)
+        self.dl_btn = ttk.Button(
+            btns, text="开始下载", command=self._download, style="Primary.TButton"
+        )
         self.info_btn.pack(side=tk.LEFT, padx=(0, 8))
         self.dl_btn.pack(side=tk.LEFT, padx=(0, 8))
-        self.open_btn.pack(side=tk.LEFT)
+        self.status_label = ttk.Label(btns, textvariable=self.status_var, style="Status.TLabel")
+        self.status_label.pack(side=tk.RIGHT, padx=(8, 0))
 
-        ttk.Progressbar(frm, variable=self.progress_var, maximum=100).grid(
-            row=4, column=0, columnspan=3, sticky="ew", pady=(0, 4)
+        info_frame = ttk.LabelFrame(frm, text="视频信息", padding=10)
+        info_frame.grid(row=5, column=0, columnspan=5, sticky="ew", pady=(0, 10))
+        info_frame.columnconfigure(0, weight=1)
+        ttk.Label(info_frame, textvariable=self.info_title_var).grid(
+            row=0, column=0, sticky="w"
         )
-        ttk.Label(frm, textvariable=self.status_var).grid(
-            row=5, column=0, columnspan=3, sticky="w"
+        ttk.Label(info_frame, textvariable=self.info_meta_var, style="Status.TLabel").grid(
+            row=1, column=0, sticky="w", pady=(4, 0)
         )
 
-        self.log = tk.Text(frm, height=16, wrap="word", state="disabled")
-        self.log.grid(row=6, column=0, columnspan=3, sticky="nsew", pady=(8, 0))
-        frm.rowconfigure(6, weight=1)
-        scroll = ttk.Scrollbar(frm, command=self.log.yview)
-        scroll.grid(row=6, column=3, sticky="ns", pady=(8, 0))
+        self.progress = ttk.Progressbar(frm, variable=self.progress_var, maximum=100)
+        self.progress.grid(row=6, column=0, columnspan=5, sticky="ew", pady=(0, 4))
+
+        self.log_toggle = ttk.Button(frm, text="显示详细日志", command=self._toggle_log)
+        self.log_toggle.grid(row=7, column=0, columnspan=5, sticky="w", pady=(4, 4))
+        self.log_frame = ttk.Frame(frm)
+        self.log_frame.grid(row=8, column=0, columnspan=5, sticky="nsew")
+        self.log_frame.grid_remove()
+        self.log_frame.columnconfigure(0, weight=1)
+        self.log_frame.rowconfigure(0, weight=1)
+        self.log = tk.Text(self.log_frame, height=8, wrap="word", state="disabled")
+        self.log.grid(row=0, column=0, sticky="nsew")
+        scroll = ttk.Scrollbar(self.log_frame, command=self.log.yview)
+        scroll.grid(row=0, column=1, sticky="ns")
         self.log.configure(yscrollcommand=scroll.set)
+        self.url_entry.focus_set()
 
     def _paste(self):
         try:
@@ -228,6 +273,15 @@ class App(tk.Tk):
             return
         os.startfile(path)
 
+    def _toggle_log(self):
+        self.log_visible = not self.log_visible
+        if self.log_visible:
+            self.log_frame.grid()
+            self.log_toggle.configure(text="隐藏详细日志")
+        else:
+            self.log_frame.grid_remove()
+            self.log_toggle.configure(text="显示详细日志")
+
     def _url(self) -> str | None:
         raw = self.url_var.get().strip()
         if not raw:
@@ -247,8 +301,22 @@ class App(tk.Tk):
     def _set_busy(self, busy: bool):
         self._busy = busy
         state = "disabled" if busy else "normal"
-        self.info_btn.configure(state=state)
-        self.dl_btn.configure(state=state)
+        for widget in (
+            self.url_entry,
+            self.dir_entry,
+            self.paste_btn,
+            self.browse_btn,
+            self.open_btn,
+            self.preset_combo,
+            self.playlist_check,
+            self.thumbnail_check,
+            self.info_btn,
+            self.dl_btn,
+        ):
+            widget.configure(state=state)
+        if not busy:
+            self.preset_combo.configure(state="readonly")
+            self.status_label.configure(style="Status.TLabel")
 
     def _log(self, msg: str):
         def _append():
@@ -262,8 +330,27 @@ class App(tk.Tk):
     def _status(self, msg: str, percent: float | None = None):
         def _set():
             self.status_var.set(msg)
+            if msg in {"下载完成", "信息已获取"}:
+                self.status_label.configure(style="Success.TLabel")
+            elif "失败" in msg:
+                self.status_label.configure(style="Error.TLabel")
+            else:
+                self.status_label.configure(style="Status.TLabel")
             if percent is not None:
                 self.progress_var.set(percent)
+                self.progress.stop()
+                self.progress.configure(mode="determinate")
+
+        self.after(0, _set)
+
+    def _set_info(self, title: str, meta: str):
+        self.after(0, lambda: self.info_title_var.set(title))
+        self.after(0, lambda: self.info_meta_var.set(meta))
+
+    def _set_progress_indeterminate(self):
+        def _set():
+            self.progress.configure(mode="indeterminate")
+            self.progress.start(12)
 
         self.after(0, _set)
 
@@ -288,6 +375,7 @@ class App(tk.Tk):
         if not url or self._busy:
             return
         self._set_busy(True)
+        self._set_progress_indeterminate()
         self._status("正在获取信息…")
         threading.Thread(target=self._info_worker, args=(url,), daemon=True).start()
 
@@ -306,6 +394,10 @@ class App(tk.Tk):
             entries = info.get("entries")
             if entries:
                 titles = [e.get("title") or "?" for e in entries if e]
+                self._set_info(
+                    info.get("title") or "播放列表",
+                    f"播放列表 · 共 {len(titles)} 项",
+                )
                 self._log(f"播放列表: {info.get('title') or ''}  共 {len(titles)} 项")
                 for i, t in enumerate(titles[:30], 1):
                     self._log(f"  {i}. {t}")
@@ -313,6 +405,10 @@ class App(tk.Tk):
                     self._log(f"  …还有 {len(titles) - 30} 项")
             else:
                 mins, secs = divmod(int(info.get("duration") or 0), 60)
+                self._set_info(
+                    info.get("title") or "未命名视频",
+                    f"时长 {mins}:{secs:02d}  ·  上传者 {info.get('uploader') or '-'}",
+                )
                 self._log(
                     f"标题: {info.get('title')}\n"
                     f"时长: {mins}:{secs:02d}  上传者: {info.get('uploader') or '-'}\n"
@@ -337,14 +433,18 @@ class App(tk.Tk):
         preset = self.preset_var.get()
         self._set_busy(True)
         self.progress_var.set(0)
+        self.progress.stop()
+        self.progress.configure(mode="determinate")
         self._status("开始下载…")
         threading.Thread(
             target=self._download_worker,
-            args=(url, out_dir, preset, self.playlist_var.get()),
+            args=(url, out_dir, preset, self.playlist_var.get(), self.thumbnail_var.get()),
             daemon=True,
         ).start()
 
-    def _download_worker(self, url: str, out_dir: str, preset: str, playlist: bool):
+    def _download_worker(
+        self, url: str, out_dir: str, preset: str, playlist: bool, download_thumbnail: bool
+    ):
         try:
             self._status("正在准备 ffmpeg / deno…")
             ffmpeg, deno = ensure_tools(self._log)
@@ -363,6 +463,7 @@ class App(tk.Tk):
                 has_ffmpeg=bool(ffmpeg),
                 ffmpeg_path=ffmpeg,
                 deno_path=deno,
+                download_thumbnail=download_thumbnail,
             )
             with yt_dlp.YoutubeDL(opts) as ydl:
                 ydl.download([url])
